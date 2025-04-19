@@ -95,16 +95,27 @@ def _get_test_data_loader(batch_size, sequences, onehot_species_list, onehot_lys
 
 def load_model():
     """加載預訓練模型並返回用於預測的模型"""
+    import time
+    
     # 獲取HF配置
     HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
     HF_MODEL_ID = os.getenv("HF_MODEL_ID", "Edison/BERT-HemoPep60-Predict")
+    LOCAL_MODEL_PATH = os.getenv("LOCAL_MODEL_PATH")
     
     print("Loading tokenizer...")
     tokenizer = BertTokenizer.from_pretrained("Rostlab/prot_bert", do_lower_case=False)
     
-    # 定義下載函數
-    def download_model(filename):
-        print(f"Downloading {filename} from Hugging Face...")
+    # 定義獲取模型的函數，優先從本地路徑加載
+    def get_model_path(filename):
+        # 檢查本地路徑
+        if LOCAL_MODEL_PATH:
+            local_file = os.path.join(LOCAL_MODEL_PATH, filename)
+            if os.path.exists(local_file):
+                print(f"Using local model file: {local_file}")
+                return local_file
+        
+        # 本地文件不存在，從Hugging Face下載
+        print(f"Local model file not found, downloading {filename} from Hugging Face...")
         try:
             path = hf_hub_download(
                 repo_id=HF_MODEL_ID,
@@ -112,30 +123,37 @@ def load_model():
                 token=HF_TOKEN
             )
             print(f"Download of {filename} completed successfully!")
+            
+            # 如果指定了本地模型路徑，將下載的模型複製到那裡
+            if LOCAL_MODEL_PATH:
+                os.makedirs(LOCAL_MODEL_PATH, exist_ok=True)
+                local_file = os.path.join(LOCAL_MODEL_PATH, filename)
+                if not os.path.exists(local_file):
+                    print(f"Copying downloaded model to {local_file}")
+                    import shutil
+                    shutil.copy(path, local_file)
+            
             return path
         except Exception as e:
             print(f"Error downloading {filename}: {str(e)}")
-            # 重要：不在這裡拋出異常，讓主線程處理
             return None
     
-    # 1. 首先嘗試單獨下載主模型權重，這是必要的
-    print("Downloading main model weights...")
+    # 1. 首先嘗試獲取主模型權重
+    print("Getting main model weights...")
     try:
-        model_weights_path = download_model("proposed_model_reproduce.pkl")
+        model_weights_path = get_model_path("proposed_model_reproduce.pkl")
         if not model_weights_path:
-            raise Exception("Failed to download main model weights, cannot continue.")
+            raise Exception("Failed to obtain main model weights, cannot continue.")
     except Exception as e:
         print(f"Critical error: {str(e)}")
-        # 為了讓API能啟動，我們使用一個簡化的模型或拋出異常
-        # 拋出異常會讓FastAPI記錄錯誤但仍然啟動應用
         raise
     
-    # 2. 然後嘗試下載預訓練模型，但允許失敗並回退到默認預訓練模型
-    print("Downloading pretrained model...")
+    # 2. 然後嘗試獲取預訓練模型
+    print("Getting pretrained model...")
     try:
-        pretrain_model_path = download_model("toxic_pep_prot_bert.pth")
+        pretrain_model_path = get_model_path("toxic_pep_prot_bert.pth")
     except Exception as e:
-        print(f"Warning: Could not download pretrained model: {str(e)}")
+        print(f"Warning: Could not obtain pretrained model: {str(e)}")
         pretrain_model_path = None
     
     # 加載預訓練模型
