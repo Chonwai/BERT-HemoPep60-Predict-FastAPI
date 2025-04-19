@@ -11,7 +11,7 @@ login(os.getenv("HF_TOKEN"))
 api = HfApi()
 
 # 創建新的模型倉庫
-repo_id = "your_username/BERT-HemoPep60-Predict-FastAPI"
+repo_id = "Chonwai/BERT-HemoPep60-Predict-FastAPI"
 api.create_repo(repo_id=repo_id, private=True)  # 設置private=False如果你想公開模型
 
 # 上傳模型文件
