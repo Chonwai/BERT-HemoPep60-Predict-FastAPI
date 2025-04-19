@@ -16,15 +16,13 @@ from io import StringIO
 from .model.inference import load_model, predict_peptide_hemolytic_activity
 
 description = """
-# BERT-HemoPep60 預測 API
+# BERT-HemoPep60 Prediction API
 
-基於transformer架構和領域適應性預訓練(DAPT)的深度學習方法，用於定量預測肽對人類紅細胞的溶血活性。
+Based on the transformer architecture and domain-adaptive pre-training (DAPT), this deep learning method is used for quantitative prediction of peptide hemolytic activity against human red blood cells.
 
-## 功能
+## Features
 
-* `/predict/`: 預測單個肽序列的溶血活性
-* `/predict/batch/`: 批量預測多個肽序列的溶血活性
-* `/predict/fasta/`: 上傳FASTA文件進行預測
+* `/api/predict`: Predict hemolytic activity of peptide sequences (supports FASTA format input)
 """
 
 app = FastAPI(
@@ -35,7 +33,7 @@ app = FastAPI(
     openapi_url="/api/openapi.json"
 )
 
-# 添加CORS中間件
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -44,7 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 加載模型
+# Load model
 model, pretrain_model = None, None
 
 @app.on_event("startup")
@@ -56,111 +54,158 @@ async def startup_event():
         print(f"Error loading model: {str(e)}")
         print(traceback.format_exc())
 
-class PeptideRequest(BaseModel):
-    sequence: str
-    
-class BatchPeptideRequest(BaseModel):
-    sequences: List[str]
+class PredictRequest(BaseModel):
+    fasta: str
+    model_type: str = "BERT-HemoPep60"  # Default model type
 
-class PeptideResponse(BaseModel):
-    sequence: str
-    predicted_HC5: float
-    predicted_HC10: float
-    predicted_HC50: float
-    
 @app.get("/")
 async def root():
     return {"message": "BERT-HemoPep60 API is running!"}
 
-@app.post("/api/predict/", response_model=PeptideResponse)
-async def predict_peptide(request: PeptideRequest):
+@app.post("/api/predict")
+async def predict_peptides(request: PredictRequest):
+    """
+    Predict hemolytic activity of peptide sequences using FASTA format input
+    
+    Input format:
+    ```
+    >sequence_id1
+    PEPTIDESEQUENCE1
+    >sequence_id2
+    PEPTIDESEQUENCE2
+    ```
+    """
     global model, pretrain_model
     
     if model is None or pretrain_model is None:
-        raise HTTPException(status_code=500, detail="Model not loaded. Please try again later.")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "detail": "Model not correctly loaded. Please try again later."
+            }
+        )
     
     try:
-        sequence = request.sequence.strip()
-        if not sequence or len(sequence) < 5:
-            raise HTTPException(status_code=400, detail="Invalid peptide sequence. Must be at least 5 amino acids.")
+        # Parse FASTA format
+        fasta_content = request.fasta.strip()
         
-        results = predict_peptide_hemolytic_activity(model, pretrain_model, [sequence])
+        # Check model_type (Optional feature, currently only supports one model)
+        if request.model_type != "BERT-HemoPep60":
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error", 
+                    "detail": f"Unsupported model type: {request.model_type}. Currently only supporting 'BERT-HemoPep60'"
+                }
+            )
         
-        # 返回預測結果
+        # Parse FASTA content
+        sequences = []
+        sequence_ids = []
+        
+        lines = fasta_content.split('\n')
+        current_id = None
+        current_seq = ""
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('>'):
+                # Save previous sequence (if any)
+                if current_id is not None and current_seq:
+                    sequence_ids.append(current_id)
+                    sequences.append(current_seq)
+                    current_seq = ""
+                
+                # Start new sequence
+                current_id = line[1:]  # Remove > symbol
+            else:
+                current_seq += line
+        
+        # Save last sequence
+        if current_id is not None and current_seq:
+            sequence_ids.append(current_id)
+            sequences.append(current_seq)
+        
+        # Check if there are valid sequences
+        if not sequences:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "detail": "No valid peptide sequences found. Please ensure FASTA format is correct."
+                }
+            )
+        
+        # Check sequence length
+        invalid_seqs = [seq for seq in sequences if len(seq) < 5]
+        if invalid_seqs:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "detail": "Invalid peptide sequence. Sequences must be at least 5 amino acids long."
+                }
+            )
+        
+        # Predict
+        predictions_result = predict_peptide_hemolytic_activity(model, pretrain_model, sequences)
+        
+        # Format response
+        # Extract HC50 as the primary prediction value from the original predictions
+        prediction_values = [float(pred["HC50"]) for pred in predictions_result]
+        
+        # Return uniform format response
         return {
-            "sequence": sequence,
-            "predicted_HC5": float(results[0]["HC5"]),
-            "predicted_HC10": float(results[0]["HC10"]),
-            "predicted_HC50": float(results[0]["HC50"])
+            "status": "success",
+            "data": {
+                "fasta_ids": sequence_ids,
+                "sequences": sequences,
+                "predictions": prediction_values,
+                "detailed_predictions": [
+                    {
+                        "sequence_id": seq_id,
+                        "sequence": seq,
+                        "HC5": float(predictions_result[i]["HC5"]),
+                        "HC10": float(predictions_result[i]["HC10"]),
+                        "HC50": float(predictions_result[i]["HC50"])
+                    }
+                    for i, (seq_id, seq) in enumerate(zip(sequence_ids, sequences))
+                ]
+            }
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
-
-@app.post("/api/predict/batch/", response_model=List[PeptideResponse])
-async def predict_peptides_batch(request: BatchPeptideRequest):
-    global model, pretrain_model
-    
-    if model is None or pretrain_model is None:
-        raise HTTPException(status_code=500, detail="Model not loaded. Please try again later.")
-    
-    try:
-        sequences = [seq.strip() for seq in request.sequences if seq.strip()]
-        if not sequences:
-            raise HTTPException(status_code=400, detail="No valid peptide sequences provided.")
-        
-        results = predict_peptide_hemolytic_activity(model, pretrain_model, sequences)
-        
-        # 返回預測結果
-        return [
-            {
-                "sequence": seq,
-                "predicted_HC5": float(results[i]["HC5"]),
-                "predicted_HC10": float(results[i]["HC10"]),
-                "predicted_HC50": float(results[i]["HC50"])
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "detail": f"Error occurred during prediction: {str(e)}"
             }
-            for i, seq in enumerate(sequences)
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+        )
 
-@app.post("/api/predict/fasta/", response_model=List[PeptideResponse])
-async def predict_from_fasta(file: UploadFile = File(...)):
-    global model, pretrain_model
+# Keep existing endpoints but mark them as deprecated
+@app.post("/api/predict/", deprecated=True)
+async def predict_peptide_deprecated(request: PredictRequest):
+    """This endpoint is deprecated, please use /api/predict"""
+    return await predict_peptides(request)
+
+@app.post("/api/predict/batch/", deprecated=True)
+async def predict_peptides_batch_deprecated(request: PredictRequest):
+    """This endpoint is deprecated, please use /api/predict"""
+    return await predict_peptides(request)
+
+@app.post("/api/predict/fasta/", deprecated=True)
+async def predict_from_fasta_deprecated(file: UploadFile = File(...)):
+    """This endpoint is deprecated, please use /api/predict"""
+    # Read file content
+    content = await file.read()
+    content = content.decode("utf-8")
     
-    if model is None or pretrain_model is None:
-        raise HTTPException(status_code=500, detail="Model not loaded. Please try again later.")
+    # Create mock request object
+    mock_request = PredictRequest(fasta=content, model_type="BERT-HemoPep60")
     
-    try:
-        # 解析FASTA文件
-        content = await file.read()
-        content = content.decode("utf-8")
-        
-        seq = collections.OrderedDict()
-        for line in content.split("\n"):
-            if line.startswith(">"):
-                name = line.split()[0]
-                name = name.replace(">", "")
-                seq[name] = ''
-            else:
-                seq[name] = seq.get(name, '') + line.strip()
-        
-        sequences = list(seq.values())
-        if not sequences:
-            raise HTTPException(status_code=400, detail="No valid peptide sequences found in FASTA file.")
-        
-        results = predict_peptide_hemolytic_activity(model, pretrain_model, sequences)
-        
-        # 返回預測結果
-        response_data = []
-        for i, (seq_id, sequence) in enumerate(seq.items()):
-            if i < len(results):
-                response_data.append({
-                    "sequence": sequence,
-                    "predicted_HC5": float(results[i]["HC5"]),
-                    "predicted_HC10": float(results[i]["HC10"]),
-                    "predicted_HC50": float(results[i]["HC50"])
-                })
-        
-        return response_data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"FASTA processing error: {str(e)}") 
+    # Call new unified endpoint
+    return await predict_peptides(mock_request) 
