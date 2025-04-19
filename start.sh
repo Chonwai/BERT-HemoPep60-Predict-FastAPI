@@ -15,4 +15,4 @@ fi
 
 # 启动FastAPI应用
 echo "Starting FastAPI application..."
-exec uvicorn api.index:app --host 0.0.0.0 --port 8000 --workers 1 
+exec uvicorn api.index:app --host 0.0.0.0 --port 9001

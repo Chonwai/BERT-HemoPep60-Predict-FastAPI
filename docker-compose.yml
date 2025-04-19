@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "9001:9001"
     volumes:
       # 挂载模型目录，这样模型只需下载一次
       - ./models:/app/models
@@ -15,6 +15,7 @@ services:
       - bert-hemopep60-network
     environment:
       - PYTHONUNBUFFERED=1
+      - HF_MODEL_ID=Edison/BERT-HemoPep60-Predict
       - LOCAL_MODEL_PATH=/app/models
     env_file:
       - .env

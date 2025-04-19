@@ -41,7 +41,7 @@ ENV PYTHONPATH=/app
 ENV LOCAL_MODEL_PATH=/app/models
 
 # 曝露端口
-EXPOSE 8000
+EXPOSE 9001
 
 # 使用启动脚本
-CMD ["uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "8000"] 
+CMD ["uvicorn", "api.index:app", "--host", "0.0.0.0", "--port", "9001"] 
