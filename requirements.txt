@@ -8,4 +8,5 @@ torch==2.2.1
 transformers
 tokenizers==0.15.2
 biopython==1.81
-python-dotenv==1.0.1 
+python-dotenv==1.0.1
+huggingface_hub
