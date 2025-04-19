@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
+  ],
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60
+    }
+  },
+  "excludeFiles": [
+    "**/*.pkl",
+    "**/*.pth",
+    "**/*.pt",
+    "**/*.pyc",
+    "**/__pycache__/**",
+    "venv/**",
+    ".git/**",
+    "tests/**",
+    ".github/**",
+    ".pytest_cache/**",
+    "model_introduction.docx",
+    "data/**",
+    "example_input.fasta",
+    "toxic_pep_prot_bert.pth",
+    "proposed_model_reproduce.pkl"
+  ]
+} 
