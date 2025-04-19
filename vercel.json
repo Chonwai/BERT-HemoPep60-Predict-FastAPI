@@ -18,27 +18,7 @@
   ],
   "functions": {
     "api/index.py": {
-      "maxDuration": 60
+      "maxDuration": 900
     }
-  },
-  "excludeFiles": [
-    "**/*.pkl",
-    "**/*.pth",
-    "**/*.pt",
-    "**/*.pyc",
-    "**/__pycache__/**",
-    "venv/**",
-    ".git/**",
-    "tests/**",
-    ".github/**",
-    ".pytest_cache/**",
-    "model_introduction.docx",
-    "data/**",
-    "example_input.fasta",
-    "toxic_pep_prot_bert.pth",
-    "proposed_model_reproduce.pkl"
-  ],
-  "env": {
-    "PYTHONUNBUFFERED": "1"
   }
 } 
