@@ -9,3 +9,9 @@ __pycache__/
 *.pyd
 *.pyw
 *.pyz
+
+# Environment variables
+.env
+
+# Hugging Face
+.hf_token

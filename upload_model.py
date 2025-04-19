@@ -1,14 +1,17 @@
 from huggingface_hub import HfApi, login
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 使用你的API Token登錄
-login("你的_HF_TOKEN")
+login(os.getenv("HF_TOKEN"))
 
 # 創建API實例
 api = HfApi()
 
 # 創建新的模型倉庫
-repo_id = "你的用戶名/BERT-HemoPep60"
+repo_id = "your_username/BERT-HemoPep60-Predict-FastAPI"
 api.create_repo(repo_id=repo_id, private=True)  # 設置private=False如果你想公開模型
 
 # 上傳模型文件
