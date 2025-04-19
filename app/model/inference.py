@@ -5,6 +5,10 @@ import pandas as pd
 import collections
 from transformers import BertTokenizer
 from torch.utils.data import Dataset, DataLoader
+from huggingface_hub import hf_hub_download
+import threading
+import concurrent.futures
+import time
 
 # 模型定義
 class DNN_module(torch.nn.Module):
@@ -91,23 +95,91 @@ def _get_test_data_loader(batch_size, sequences, onehot_species_list, onehot_lys
 
 def load_model():
     """加載預訓練模型並返回用於預測的模型"""
-    # 使用 Hugging Face 預訓練模型 (輕量化版本)
+    # 獲取HF配置
+    HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+    HF_MODEL_ID = os.getenv("HF_MODEL_ID", "Edison/BERT-HemoPep60-Predict")
+    
     print("Loading tokenizer...")
     tokenizer = BertTokenizer.from_pretrained("Rostlab/prot_bert", do_lower_case=False)
     
-    # 載入預訓練模型 - 使用transformers庫直接加載
-    print("Loading pretrained model...")
-    from transformers import BertModel
-    pretrain_bert = BertModel.from_pretrained("Rostlab/prot_bert")
+    # 定義下載函數
+    def download_model(filename):
+        print(f"Downloading {filename} from Hugging Face...")
+        try:
+            path = hf_hub_download(
+                repo_id=HF_MODEL_ID,
+                filename=filename,
+                token=HF_TOKEN
+            )
+            print(f"Download of {filename} completed successfully!")
+            return path
+        except Exception as e:
+            print(f"Error downloading {filename}: {str(e)}")
+            # 重要：不在這裡拋出異常，讓主線程處理
+            return None
+    
+    # 1. 首先嘗試單獨下載主模型權重，這是必要的
+    print("Downloading main model weights...")
+    try:
+        model_weights_path = download_model("proposed_model_reproduce.pkl")
+        if not model_weights_path:
+            raise Exception("Failed to download main model weights, cannot continue.")
+    except Exception as e:
+        print(f"Critical error: {str(e)}")
+        # 為了讓API能啟動，我們使用一個簡化的模型或拋出異常
+        # 拋出異常會讓FastAPI記錄錯誤但仍然啟動應用
+        raise
+    
+    # 2. 然後嘗試下載預訓練模型，但允許失敗並回退到默認預訓練模型
+    print("Downloading pretrained model...")
+    try:
+        pretrain_model_path = download_model("toxic_pep_prot_bert.pth")
+    except Exception as e:
+        print(f"Warning: Could not download pretrained model: {str(e)}")
+        pretrain_model_path = None
+    
+    # 加載預訓練模型
+    if pretrain_model_path:
+        print(f"Loading pretrained model from {pretrain_model_path}...")
+        try:
+            from transformers import BertModel
+            pretrain_bert_base = BertModel.from_pretrained("Rostlab/prot_bert")
+            
+            # 使用pretrained權重替換基本模型的狀態
+            pretrain_state_dict = torch.load(pretrain_model_path, map_location=torch.device('cpu'))
+            # 檢查加載的物件類型
+            if isinstance(pretrain_state_dict, torch.nn.Module):
+                # 如果是模型實例，獲取其狀態字典
+                pretrain_state_dict = pretrain_state_dict.state_dict()
+                
+            # 嘗試加載預訓練模型權重
+            pretrain_bert_base.load_state_dict(pretrain_state_dict, strict=False)
+            pretrain_bert = pretrain_bert_base
+            print("Custom pretrained model loaded successfully!")
+            
+        except Exception as e:
+            print(f"Error loading custom pretrained model, falling back to Rostlab/prot_bert: {str(e)}")
+            # 如果加載失敗，使用標準預訓練模型
+            from transformers import BertModel
+            pretrain_bert = BertModel.from_pretrained("Rostlab/prot_bert")
+    else:
+        print("Using default pretrained model from Rostlab/prot_bert")
+        from transformers import BertModel
+        pretrain_bert = BertModel.from_pretrained("Rostlab/prot_bert")
     
     # 初始化模型
     print("Initializing model...")
     dnn = DNN_module(species_len=6, lysis_len=3, dropout=0.5)
     model = TOXI_REG(pretrain_bert=pretrain_bert, dnn=dnn)
     
-    # 載入模型權重
-    print("Loading model weights...")
-    model.load_state_dict(torch.load('proposed_model_reproduce.pkl', map_location=torch.device('cpu')), strict=False)
+    # 加載模型權重
+    print(f"Loading model weights from {model_weights_path}...")
+    try:
+        model.load_state_dict(torch.load(model_weights_path, map_location=torch.device('cpu')), strict=False)
+        print("Model weights loaded successfully!")
+    except Exception as e:
+        print(f"Error loading model weights: {str(e)}")
+        raise
     
     # 設定為評估模式
     model.eval()

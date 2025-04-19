@@ -11,9 +11,13 @@ import collections
 import traceback
 import json
 from io import StringIO
+from dotenv import load_dotenv
 
 
 from .model.inference import load_model, predict_peptide_hemolytic_activity
+
+# 加載環境變量
+load_dotenv()
 
 description = """
 # BERT-HemoPep60 Prediction API

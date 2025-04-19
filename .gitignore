@@ -1,17 +1,54 @@
-*.pkl
-*.pth
-.DS_Store
-
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pyw
-*.pyz
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Large model files
+*.pkl
+*.pth
+*.pt
+*.bin
+*.model
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
 
 # Environment variables
 .env
+.env.local
+
+# OS specific
+.DS_Store
+Thumbs.db
 
 # Hugging Face
 .hf_token
